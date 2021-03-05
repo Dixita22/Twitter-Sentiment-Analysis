@@ -59,6 +59,6 @@ Sentiment analysis (sometimes known as opinion mining or emotion AI) refers to t
 
 #### Conclusion:
 
-![Screenshot](wordcloud.jpg)
+![Screenshot](wordcloud(amazon).png)
 
 ![Screenshot](histogram.jpg)
