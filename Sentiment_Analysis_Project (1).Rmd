@@ -1,0 +1,438 @@
+---
+title: "Twitter Sentiment Analysis"
+author: "Meghdeep Sapre"
+date: "June 05, 2020"
+output: html_document
+---
+
+Loading all the libraries we need for Twitter Sentiment Analysis
+```{r}
+library(RColorBrewer)
+library(wordcloud)
+library(tm)
+library(twitteR)
+library(ROAuth)
+library(plyr)
+library(stringr)
+library(base64enc)
+library(SnowballC)
+library(tm)
+library(tidytext)  
+library(janeaustenr) 
+library(stringr) 
+library(tidyr) 
+library(dplyr)
+library(ggplot2)
+library(ggmap)
+```
+
+
+downloading the certificate for access and setting the URL as constant for request, access and authorization
+```{r}
+download.file(url="http://curl.haxx.se/ca/cacert.pem", destfile="cacert.pem")
+#Set constant request URL
+requestURL <- "https://api.twitter.com/oauth/request_token"
+# Set constant access URL
+accessURL <- "https://api.twitter.com/oauth/access_token"
+# Set constant auth URL
+authURL <- "https://api.twitter.com/oauth/authorize"
+```
+
+
+Here you have to use your key 
+for key Create Account on https://developer.twitter.com/en
+```{r}
+consumerKey <- "59oDfXxmBBm22p2j3Gowy4lEE"  
+consumerSecret <- "bZufUMPivqtX94xG4Bt3QmsmqyL7TsDbkW8Kuo3cGYeFfKoysY"
+```
+
+
+Create the authorization object by calling function OAuthFactory
+```{r}
+Cred <- OAuthFactory$new(consumerKey=consumerKey,
+                         consumerSecret=consumerSecret,
+                         requestURL=requestURL,
+                         accessURL=accessURL, 
+                         authURL=authURL)
+
+consumerKey <- "59oDfXxmBBm22p2j3Gowy4lEE" 
+consumerSecret <- "bZufUMPivqtX94xG4Bt3QmsmqyL7TsDbkW8Kuo3cGYeFfKoysY"
+access_Token <- "3060838521-u5eXreDFHOqaxUcvTYMFyuEXImu5RlpdiY436h8" 
+access_Secret <- "Q55FxITLmzlJWW4xpNbwnsW2UPXQZL4KiOWf9QdsDlYKt"
+```
+
+Create Twitter connection
+```{r}
+setup_twitter_oauth(consumerKey,consumerSecret,access_Token,access_Secret)
+```
+
+From Problem Statement
+1. Extract twitter data for each of the competitors (Min tweets per competitors - 3000)
+Extracting Amazon_india tweets 
+```
+We are taking tweets using searchTwitter. We can also take tweets from userTimeline
+```
+```{r}
+amazon <- searchTwitter('amazon_india',n=3000,lang = 'en')
+#amazon <- userTimeline('@amazonIN', n=3000)
+length (amazon)
+```
+
+2. Remove stop words and Perform positive and negative tweet analysis.
+
+Removing Punctuation, stop words and URL
+```{r}
+amazon_text <- sapply(amazon, function(x) x$getText())
+amazon_text_corpus <- iconv(amazon_text, 'UTF-8', 'ASCII')
+amazon_text_corpus <- Corpus(VectorSource(amazon_text))
+amazon_text_corpus <- tm_map(amazon_text_corpus, removePunctuation)
+amazon_text_corpus <- tm_map(amazon_text_corpus, content_transformer(tolower))
+amazon_text_corpus <- tm_map(amazon_text_corpus, function(x)removeWords(x,stopwords()))
+amazon_text_corpus <- tm_map(amazon_text_corpus, function(x) iconv(x, to='ASCII'))
+amazon_text_corpus <- tm_map(amazon_text_corpus, removeWords, c('RT', 'are','that'))
+removeURL <- function(x) gsub('http[[:alnum:]]*', '', x)
+amazon_text_corpus <- tm_map(amazon_text_corpus, content_transformer(removeURL))
+```
+
+Creating TermDocumentMatrix and storing it in DataFrame
+```{r}
+wc1 <- TermDocumentMatrix(amazon_text_corpus)
+wc1 <- as.matrix(wc1)
+wc1 <- sort(rowSums(wc1),decreasing=TRUE)
+wc1
+d1 <- data.frame(word = names(wc1), freq = wc1)
+```
+
+3. Create a word-cloud
+Wordcloud of total tweets on Amazon_india
+```{r}
+wordcloud(words = d1$word, freq = d1$freq, min.freq = 1, max.words = 130, random.order = FALSE, rot.per = 0.35, colors = brewer.pal(8,"Dark2"))
+```
+
+
+Extracting Sentiments of Amazon_india
+```{r}
+amazonsentiments <- d1 %>%
+  inner_join(get_sentiments("bing"),by="word")
+amazonsentiments
+```
+
+Positive Sentiment of Amazon_india
+```{r}
+amazonpositive <- amazonsentiments %>%
+  filter(sentiment == "positive")
+amazonpositive
+```
+
+Wordcloud on Amazon_india(Positive words)
+```{r}
+wordcloud(words = amazonpositive$word, freq = amazonpositive$freq, min.freq = 1, max.words = 200, random.order = FALSE, rot.per = 0.35, colors = brewer.pal(8,"Dark2"))
+```
+
+Negative Sentiment of amazon_india
+```{r}
+amazonnegative <- amazonsentiments %>%
+  filter(sentiment == "negative")
+amazonnegative
+```
+
+Wordcloud on Amazon_india(negative words)
+```{r}
+wordcloud(words = amazonnegative$word, freq = amazonnegative$freq, min.freq = 1, max.words = 200, random.order = FALSE, rot.per = 0.35, colors = brewer.pal(8,"Dark2"))
+```
+
+
+Total number of positive and negative sentiments for Amazon_india
+```{r}
+a <- count(amazonpositive)
+b <- count(amazonnegative)
+
+X <- data.frame(
+  "group" = c("Positive", "Negative"),
+  "value" = c(a$n,b$n)
+)%>%
+  mutate(group = factor(group, levels = c("Negative","Positive")),
+         cumulative = cumsum(value),
+         midpoint = cumulative - value / 2,
+         label = paste0(group, " ", round(value / sum(value) * 100, 1), "%"))
+
+ggplot(X, aes(x = 1, weight = value, fill = group)) +
+  geom_bar(width = 1, position = "stack") +
+  coord_polar(theta = "y") +
+  geom_text(aes(x = 1, y = midpoint, label = label)) +
+  theme_nothing()
+```
+
+
+Extracting Flipkart tweets 
+```{r}
+flipkart <- searchTwitter('Flipkart',n=3000,lang = 'en')
+#flipkart <- userTimeline('@Flipkart', n=3000)
+length (flipkart)
+```
+
+Removing Punctuation, stop words and URL
+```{r}
+flipkart_text <- sapply(flipkart, function(x) x$getText())
+flipkart_text_corpus <- iconv(flipkart_text, 'UTF-8', 'ASCII')
+flipkart_text_corpus <- Corpus(VectorSource(flipkart_text))
+flipkart_text_corpus <- tm_map(flipkart_text_corpus, removePunctuation)
+flipkart_text_corpus <- tm_map(flipkart_text_corpus, content_transformer(tolower))
+flipkart_text_corpus <- tm_map(flipkart_text_corpus, function(x)removeWords(x,stopwords()))
+flipkart_text_corpus <- tm_map(flipkart_text_corpus, function(x) iconv(x, to='ASCII'))
+flipkart_text_corpus <- tm_map(flipkart_text_corpus, removeWords, c('RT', 'are','that'))
+
+removeURL <- function(x) gsub('http[[:alnum:]]*', '', x)
+flipkart_text_corpus <- tm_map(flipkart_text_corpus, content_transformer(removeURL))
+```
+
+Creating TermDocumentMatrix and storing it in DataFrame
+```{r}
+wc2 <- TermDocumentMatrix(flipkart_text_corpus)
+wc2 <- as.matrix(wc2)
+wc2 <- sort(rowSums(wc2),decreasing=TRUE)
+wc2
+d2 <- data.frame(word = names(wc2), freq = wc2)
+```
+
+Wordcloud of total tweets on Flipkart
+```{r}
+wordcloud(words = d2$word, freq = d2$freq, min.freq = 1, max.words = 130, random.order = FALSE, rot.per = 0.35, colors = brewer.pal(30,"Dark2"))
+```
+
+
+Extracting Sentiments of Flipkart
+```{r}
+flipkartsentiments <- d2 %>%
+  inner_join(get_sentiments("bing"),by="word")
+flipkartsentiments
+```
+
+Positive Sentiment of Flipkart
+```{r}
+flipkartpositive <- flipkartsentiments %>%
+  filter(sentiment == "positive")
+flipkartpositive
+```
+
+Wordcloud on Flipkart(Positive words)
+```{r}
+wordcloud(words = flipkartpositive$word, freq = flipkartpositive$freq, min.freq = 1, max.words = 130, random.order = FALSE, rot.per = 0.35, colors = brewer.pal(8,"Dark2"))
+```
+
+Negative Sentiment of Flipkart
+```{r}
+flipkartnegative <- flipkartsentiments %>%
+  filter(sentiment == "negative")
+flipkartnegative
+```
+
+
+Wordcloud(negative words)
+```{r}
+wordcloud(words = flipkartnegative$word, freq = flipkartnegative$freq, min.freq = 1, max.words = 200, random.order = FALSE, rot.per = 0.35, colors = brewer.pal(9,"Dark2"))
+```
+
+
+Total number of positive and negative sentiments for Flipkart
+```{r}
+c <- count(flipkartpositive)
+d <- count(flipkartnegative)
+
+X1 <- data.frame(
+  "group" = c("Positive", "Negative"),
+  "value" = c(c$n,d$n)
+)%>%
+  mutate(group = factor(group, levels = c("Negative","Positive")),
+         cumulative = cumsum(value),
+         midpoint = cumulative - value / 2,
+         label = paste0(group, " ", round(value / sum(value) * 100, 1), "%"))
+
+ggplot(X1, aes(x = 1, weight = value, fill = group)) +
+  geom_bar(width = 1, position = "stack") +
+  coord_polar(theta = "y") +
+  geom_text(aes(x = 1, y = midpoint, label = label)) +
+  theme_nothing()
+```
+
+
+Extracting Snapdeal tweets
+```{r}
+snapdeal <- searchTwitter('snapdeal',n=3000,lang = 'en')
+#snapdeal <- userTimeline('@snapdeal', n=3000)
+length (snapdeal)
+```
+
+Removing Punctuation, stop words and URL
+```{r}
+snapdeal_text <- sapply(snapdeal, function(x) x$getText())
+snapdeal_text_corpus <- iconv(snapdeal_text, 'UTF-8', 'ASCII')
+snapdeal_text_corpus <- Corpus(VectorSource(snapdeal_text))
+snapdeal_text_corpus <- tm_map(snapdeal_text_corpus, removePunctuation)
+snapdeal_text_corpus <- tm_map(snapdeal_text_corpus, content_transformer(tolower))
+snapdeal_text_corpus <- tm_map(snapdeal_text_corpus, function(x)removeWords(x,stopwords()))
+snapdeal_text_corpus <- tm_map(snapdeal_text_corpus, function(x) iconv(x, to='ASCII'))
+snapdeal_text_corpus <- tm_map(snapdeal_text_corpus, removeWords, c('RT', 'are','that'))
+
+removeURL <- function(x) gsub('http[[:alnum:]]*', '', x)
+snapdeal_text_corpus <- tm_map(snapdeal_text_corpus, content_transformer(removeURL))
+```
+
+Creating TermDocumentMatrix and storing it in DataFrame
+```{r}
+wc3 <- TermDocumentMatrix(snapdeal_text_corpus)
+wc3 <- as.matrix(wc3)
+wc3 <- sort(rowSums(wc3),decreasing=TRUE)
+wc3
+d3 <- data.frame(word = names(wc3), freq = wc3)
+```
+Wordcloud of total tweets on Amazon_india
+```{r}
+wordcloud(words = d3$word, freq = d3$freq, min.freq = 1, max.words = 130, random.order = FALSE, rot.per = 0.35, colors = brewer.pal(8,"Dark2"))
+```
+
+Extracting Sentiments of Snapdeal
+```{r}
+snapdealsentiments <- d3 %>%
+  inner_join(get_sentiments("bing"),by="word")
+snapdealsentiments
+```
+
+
+Positive Sentiment of Snapdeal
+```{r}
+snapdealpositive <- snapdealsentiments %>%
+  filter(sentiment == "positive")
+snapdealpositive
+```
+
+Wordcloud on Snapdeal(Positive words)
+```{r}
+wordcloud(words = snapdealpositive$word, freq = snapdealpositive$freq, min.freq = 1, max.words = 130, random.order = FALSE, rot.per = 0.35, colors = brewer.pal(8,"Dark2"))
+```
+
+
+Negative Sentiment of Snapdeal
+```{r}
+snapdealnegative <- snapdealsentiments %>%
+  filter(sentiment == "negative")
+snapdealnegative
+```
+
+
+Wordcloud of Snapdeal(negative words)
+```{r}
+wordcloud(words = snapdealnegative$word, freq = snapdealnegative$freq, min.freq = 1, max.words = 200, random.order = FALSE, rot.per = 0.35, colors = brewer.pal(8,"Dark2"))
+```
+
+
+Total number of positive and negative sentiments for Snapdeal
+```{r}
+e <- count(snapdealpositive)
+f <- count(snapdealnegative)
+
+X2 <- data.frame(
+  "group" = c("Positive", "Negative"),
+  "value" = c(e$n,f$n)
+)%>%
+  mutate(group = factor(group, levels = c("Negative","Positive")),
+         cumulative = cumsum(value),
+         midpoint = cumulative - value / 2,
+         label = paste0(group, " ", round(value / sum(value) * 100, 1), "%"))
+
+ggplot(X2, aes(x = 1, weight = value, fill = group)) +
+  geom_bar(width = 1, position = "stack") +
+  coord_polar(theta = "y") +
+  geom_text(aes(x = 1, y = midpoint, label = label)) +
+  theme_nothing()
+```
+
+4. Analyse for which products what are the sentiments.
+Sentiment Analysis
+
+reading the words from positive and negative csv file
+create a function score.sentiment to compare and get the score of positive and negative sentiments
+```{r}
+pos.words <- read.csv('positive.csv')
+neg.words <- read.csv('negative.csv')
+
+pos.words <- scan('positive.csv',what = 'character')
+neg.words <- scan('negative.csv',what = 'character')
+
+pos.words = c(pos.words, 'new','nice' ,'good', 'horizon')
+neg.words = c(neg.words, 'wtf', 'behind','feels', 'ugly', 'back','worse' , 'shitty', 'bad', 
+              'freaking','sucks','horrible')
+
+
+score.sentiment = function(sentences, pos.words, neg.words, .progress='none')
+{
+  require(plyr)
+  require(stringr)
+  scores = laply(sentences, function(sentence, pos.words, neg.words) {
+  
+    sentence = gsub('[[:punct:]]', '', sentence)
+    sentence = gsub('[[:cntrl:]]', '', sentence)
+    sentence = gsub('\\d+', '', sentence)
+    #convert to lower case:
+    sentence = tolower(sentence)
+    
+    # split into words. str_split is in the stringr package
+    word.list = str_split(sentence, '\\s+')
+    
+    # sometimes a list() is one level of hierarchy too much
+    words = unlist(word.list)
+    
+    # compare our words to the dictionaries of positive & negative terms
+    pos.matches = match(words, pos.words)
+    neg.matches = match(words, neg.words)
+    
+    # match() returns the position of the matched term or NA
+    # we just want a TRUE/FALSE:
+    pos.matches = !is.na(pos.matches)
+    neg.matches = !is.na(neg.matches)
+    
+    # and conveniently enough, TRUE/FALSE will be treated as 1/0 by sum():
+    score = sum(pos.matches) - sum(neg.matches)
+    
+    return(score)
+  }, pos.words, neg.words, .progress=.progress )
+  
+  scores.df = data.frame(score=scores, text=sentences)
+  return(scores.df)
+}
+```
+
+
+Summart of Amazon_india tweets
+```{r}
+amazong <- ldply(amazon,function(t) t$toDataFrame() )
+result1 <- score.sentiment(amazong$text,pos.words,neg.words)
+summary(result1$score)
+```
+Histogram on Amazon_india Tweets
+```{r}
+hist(result1$score,col = 'dark orange', main = 'Sentiment Analysis for Amazon ', xlab = 'score of tweets')
+```
+
+Summary of Flipkart tweets
+```{r}
+flipkartg <- ldply(flipkart,function(t) t$toDataFrame() )
+result2 <- score.sentiment(flipkartg$text,pos.words,neg.words)
+summary(result2$score)
+```
+Histogram on Flipkart Tweets
+```{r}
+hist(result2$score,col = 'green', main = 'Sentiment Analysis for Flipkart ', xlab = 'score of tweets')
+```
+
+
+Summary of Snapdeal tweets
+```{r}
+snapdealg <- ldply(snapdeal,function(t) t$toDataFrame() )
+result3 <- score.sentiment(snapdealg$text,pos.words,neg.words)
+summary(result3$score)
+```
+Histogram on Snapdeal Tweets
+```{r}
+hist(result3$score,col = '  blue', main = 'Sentiment Analysis for snapdeal ', xlab = 'score of tweets')
+```
